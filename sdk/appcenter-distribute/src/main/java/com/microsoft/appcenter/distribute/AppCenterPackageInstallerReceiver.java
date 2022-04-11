@@ -17,6 +17,7 @@ import android.os.Bundle;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.VisibleForTesting;
 
 import com.microsoft.appcenter.utils.AppCenterLog;
 
@@ -27,9 +28,11 @@ import java.util.Locale;
  */
 public class AppCenterPackageInstallerReceiver extends BroadcastReceiver {
 
-    public static final String START_ACTION = "com.microsoft.appcenter.action.START";
-    public static final String MY_PACKAGE_REPLACED_ACTION = "android.intent.action.MY_PACKAGE_REPLACED";
-    private boolean isReceiverRegistered;
+    @VisibleForTesting
+    static final String START_ACTION = "com.microsoft.appcenter.action.START";
+
+    @VisibleForTesting
+    static final String MY_PACKAGE_REPLACED_ACTION = "android.intent.action.MY_PACKAGE_REPLACED";
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -60,32 +63,16 @@ public class AppCenterPackageInstallerReceiver extends BroadcastReceiver {
                 case PackageInstaller.STATUS_FAILURE_INVALID:
                 case PackageInstaller.STATUS_FAILURE_STORAGE:
                     AppCenterLog.debug(LOG_TAG, String.format(Locale.ENGLISH, "Failed to install a new release with status: %s. Error message: %s.", status, message));
+                    // FIXME: StrictMode policy violation: android.os.strictmode.IncorrectContextUseViolation
                     Toast.makeText(context, context.getString(R.string.appcenter_distribute_something_went_wrong_during_installing_new_release), Toast.LENGTH_SHORT).show();
                     break;
                 default:
                     AppCenterLog.debug(LOG_TAG, String.format(Locale.ENGLISH, "Unrecognized status received from installer: %s", status));
+                    // FIXME: StrictMode policy violation: android.os.strictmode.IncorrectContextUseViolation
                     Toast.makeText(context, context.getString(R.string.appcenter_distribute_something_went_wrong_during_installing_new_release), Toast.LENGTH_SHORT).show();
             }
         } else {
             AppCenterLog.debug(LOG_TAG, String.format(Locale.ENGLISH, "Unrecognized action %s - do nothing.", intent.getAction()));
         }
-    }
-
-    public void tryRegisterReceiver(@NonNull Context context, @NonNull IntentFilter intentFilter) {
-        if (isReceiverRegistered) {
-            return;
-        }
-        isReceiverRegistered = true;
-        context.registerReceiver(this, intentFilter);
-        AppCenterLog.debug(LOG_TAG, "The receiver for installing a new release was registered.");
-    }
-
-    public void tryUnregisterReceiver(@NonNull Context context) {
-        if (!isReceiverRegistered) {
-            return;
-        }
-        isReceiverRegistered = false;
-        context.unregisterReceiver(this);
-        AppCenterLog.debug(LOG_TAG, "The receiver for installing a new release was unregistered.");
     }
 }

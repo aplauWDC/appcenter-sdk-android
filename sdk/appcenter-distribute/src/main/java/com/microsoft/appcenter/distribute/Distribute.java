@@ -317,7 +317,6 @@ public class Distribute extends AbstractAppCenterService {
     private Distribute() {
         mFactories = new HashMap<>();
         mFactories.put(DistributionStartSessionLog.TYPE, new DistributionStartSessionLogFactory());
-        mAppCenterPackageInstallerReceiver = new AppCenterPackageInstallerReceiver();
         mPackageInstallerReceiverFilter = new IntentFilter();
         mPackageInstallerReceiverFilter.addAction(AppCenterPackageInstallerReceiver.START_ACTION);
         mPackageInstallerReceiverFilter.addAction(AppCenterPackageInstallerReceiver.MY_PACKAGE_REPLACED_ACTION);
@@ -613,26 +612,34 @@ public class Distribute extends AbstractAppCenterService {
     /**
      * Register package installer receiver.
      */
-    private synchronized void registerReceiver(Activity activity) {
+    private synchronized void registerReceiver(@Nullable Activity activity) {
         if (!isInstanceEnabled()) {
             AppCenterLog.warn(LOG_TAG, "Couldn't register receiver due to Distribute module is disabled.");
             return;
         }
-        if (activity != null) {
-            mAppCenterPackageInstallerReceiver.tryRegisterReceiver(activity.getApplicationContext(), mPackageInstallerReceiverFilter);
-        } else {
+        if (activity == null) {
             AppCenterLog.warn(LOG_TAG, "Couldn't register receiver due to activity is null.");
+            return;
+        }
+        if (mAppCenterPackageInstallerReceiver == null) {
+            mAppCenterPackageInstallerReceiver = new AppCenterPackageInstallerReceiver();
+            activity.getApplicationContext().registerReceiver(mAppCenterPackageInstallerReceiver, mPackageInstallerReceiverFilter);
+            AppCenterLog.debug(LOG_TAG, "The receiver for installing a new release was registered.");
         }
     }
 
     /**
      * Unregister package installer receiver.
      */
-    private synchronized void unregisterReceiver(Activity activity) {
-        if (activity != null) {
-            mAppCenterPackageInstallerReceiver.tryUnregisterReceiver(activity.getApplicationContext());
-        } else {
+    private synchronized void unregisterReceiver(@Nullable Activity activity) {
+        if (activity == null) {
             AppCenterLog.warn(LOG_TAG, "Couldn't unregister due to activity is null.");
+            return;
+        }
+        if (mAppCenterPackageInstallerReceiver != null) {
+            activity.getApplicationContext().unregisterReceiver(mAppCenterPackageInstallerReceiver);
+            mAppCenterPackageInstallerReceiver = null;
+            AppCenterLog.debug(LOG_TAG, "The receiver for installing a new release was unregistered.");
         }
     }
 
@@ -1489,6 +1496,7 @@ public class Distribute extends AbstractAppCenterService {
      * @param dialog existing dialog if any, always returning true when null.
      * @return true if a new dialog should be displayed, false otherwise.
      */
+    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     private boolean shouldRefreshDialog(@Nullable Dialog dialog) {
 
         /* We could be in another activity now, refresh dialog. */
@@ -1901,7 +1909,6 @@ public class Distribute extends AbstractAppCenterService {
     }
 
     @UiThread
-    @VisibleForTesting
     synchronized void notifyInstallProgress(boolean isInProgress) {
         mInstallInProgress = isInProgress;
         if (isInProgress) {
@@ -1939,6 +1946,7 @@ public class Distribute extends AbstractAppCenterService {
             return;
         }
         post(new Runnable() {
+
             @Override
             public void run() {
                 mReleaseInstallerListener.startInstall();
