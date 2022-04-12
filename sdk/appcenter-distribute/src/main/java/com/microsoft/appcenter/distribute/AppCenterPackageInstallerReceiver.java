@@ -34,6 +34,13 @@ public class AppCenterPackageInstallerReceiver extends BroadcastReceiver {
     @VisibleForTesting
     static final String MY_PACKAGE_REPLACED_ACTION = "android.intent.action.MY_PACKAGE_REPLACED";
 
+    public IntentFilter getInstallerReceiverFilter() {
+        IntentFilter installerReceiverFilter = new IntentFilter();
+        installerReceiverFilter.addAction(AppCenterPackageInstallerReceiver.START_ACTION);
+        installerReceiverFilter.addAction(AppCenterPackageInstallerReceiver.MY_PACKAGE_REPLACED_ACTION);
+        return installerReceiverFilter;
+    }
+
     @Override
     public void onReceive(Context context, Intent intent) {
         if (MY_PACKAGE_REPLACED_ACTION.equals(intent.getAction())) {

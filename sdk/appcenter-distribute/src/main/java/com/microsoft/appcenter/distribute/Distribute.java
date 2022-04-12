@@ -257,11 +257,6 @@ public class Distribute extends AbstractAppCenterService {
     private AppCenterPackageInstallerReceiver mAppCenterPackageInstallerReceiver;
 
     /**
-     * Intent filter of receiver for a new release.
-     */
-    private IntentFilter mPackageInstallerReceiverFilter;
-
-    /**
      * Remember if we checked download since our own process restarted.
      */
     private boolean mCheckedDownload;
@@ -317,9 +312,6 @@ public class Distribute extends AbstractAppCenterService {
     private Distribute() {
         mFactories = new HashMap<>();
         mFactories.put(DistributionStartSessionLog.TYPE, new DistributionStartSessionLogFactory());
-        mPackageInstallerReceiverFilter = new IntentFilter();
-        mPackageInstallerReceiverFilter.addAction(AppCenterPackageInstallerReceiver.START_ACTION);
-        mPackageInstallerReceiverFilter.addAction(AppCenterPackageInstallerReceiver.MY_PACKAGE_REPLACED_ACTION);
     }
 
     /**
@@ -623,7 +615,8 @@ public class Distribute extends AbstractAppCenterService {
         }
         if (mAppCenterPackageInstallerReceiver == null) {
             mAppCenterPackageInstallerReceiver = new AppCenterPackageInstallerReceiver();
-            activity.getApplicationContext().registerReceiver(mAppCenterPackageInstallerReceiver, mPackageInstallerReceiverFilter);
+            activity.getApplicationContext().registerReceiver(mAppCenterPackageInstallerReceiver,
+                    mAppCenterPackageInstallerReceiver.getInstallerReceiverFilter());
             AppCenterLog.debug(LOG_TAG, "The receiver for installing a new release was registered.");
         }
     }
@@ -1072,8 +1065,6 @@ public class Distribute extends AbstractAppCenterService {
         if (getStoredDownloadState() == DOWNLOAD_STATE_NOTIFIED) {
             AppCenterLog.debug(LOG_TAG, "Delete notification");
             NotificationManager notificationManager = (NotificationManager) mContext.getSystemService(Context.NOTIFICATION_SERVICE);
-
-            //noinspection ConstantConditions
             notificationManager.cancel(DistributeUtils.getNotificationId());
         }
     }
@@ -1949,24 +1940,24 @@ public class Distribute extends AbstractAppCenterService {
 
             @Override
             public void run() {
-                mReleaseInstallerListener.startInstall();
+                AppCenterLog.debug(AppCenterLog.LOG_TAG, "Start installing new release...");
+
+                // TODO: Get localUri
+                InstallerUtils.installPackage(null, mContext, mReleaseInstallerListener);
             }
         });
     }
 
     /**
      * Ask permission on start application after update or start to install a new update.
-     *
-     * @param downloadId downloadId of downloaded file.
-     * @param totalSize total size of downloaded file.
      */
-    synchronized void showSystemSettingsDialogOrStartInstalling(long downloadId, long totalSize) {
+    @UiThread
+    synchronized void showSystemSettingsDialogOrStartInstalling(@NonNull Uri localUri) {
         if (mReleaseInstallerListener == null) {
             AppCenterLog.debug(LOG_TAG, "Installing couldn't start due to the release installer wasn't initialized.");
             return;
         }
-        mReleaseInstallerListener.setDownloadId(downloadId);
-        mReleaseInstallerListener.setTotalSize(totalSize);
+        // TODO: Remember localUri
 
         /* Check permission on start application after update. */
         if (InstallerUtils.isSystemAlertWindowsEnabled(mContext)) {
