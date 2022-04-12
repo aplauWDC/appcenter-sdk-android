@@ -10,17 +10,14 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
 import android.app.DownloadManager;
-import android.app.Notification;
-import android.app.NotificationChannel;
 import android.app.NotificationManager;
-import android.app.PendingIntent;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.database.DatabaseUtils;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
@@ -42,6 +39,8 @@ import com.microsoft.appcenter.distribute.download.ReleaseDownloaderFactory;
 import com.microsoft.appcenter.distribute.ingestion.DistributeIngestion;
 import com.microsoft.appcenter.distribute.ingestion.models.DistributionStartSessionLog;
 import com.microsoft.appcenter.distribute.ingestion.models.json.DistributionStartSessionLogFactory;
+import com.microsoft.appcenter.distribute.BrowserUtils;
+import com.microsoft.appcenter.distribute.DistributeUtils;
 import com.microsoft.appcenter.http.HttpException;
 import com.microsoft.appcenter.http.HttpResponse;
 import com.microsoft.appcenter.http.HttpUtils;
@@ -81,7 +80,6 @@ import static com.microsoft.appcenter.distribute.DistributeConstants.GET_LATEST_
 import static com.microsoft.appcenter.distribute.DistributeConstants.GET_LATEST_PUBLIC_RELEASE_PATH_FORMAT;
 import static com.microsoft.appcenter.distribute.DistributeConstants.HEADER_API_TOKEN;
 import static com.microsoft.appcenter.distribute.DistributeConstants.LOG_TAG;
-import static com.microsoft.appcenter.distribute.DistributeConstants.NOTIFICATION_CHANNEL_ID;
 import static com.microsoft.appcenter.distribute.DistributeConstants.PARAMETER_DISTRIBUTION_GROUP_ID;
 import static com.microsoft.appcenter.distribute.DistributeConstants.PARAMETER_INSTALL_ID;
 import static com.microsoft.appcenter.distribute.DistributeConstants.PARAMETER_RELEASE_ID;
@@ -101,8 +99,6 @@ import static com.microsoft.appcenter.distribute.DistributeConstants.PREFERENCE_
 import static com.microsoft.appcenter.distribute.DistributeConstants.PREFERENCE_KEY_UPDATE_SETUP_FAILED_PACKAGE_HASH_KEY;
 import static com.microsoft.appcenter.distribute.DistributeConstants.PREFERENCE_KEY_UPDATE_TOKEN;
 import static com.microsoft.appcenter.distribute.DistributeConstants.SERVICE_NAME;
-import static com.microsoft.appcenter.distribute.DistributeUtils.computeReleaseHash;
-import static com.microsoft.appcenter.distribute.DistributeUtils.getStoredDownloadState;
 
 /**
  * Distribute service.
@@ -257,6 +253,8 @@ public class Distribute extends AbstractAppCenterService {
      */
     private AppCenterPackageInstallerReceiver mAppCenterPackageInstallerReceiver;
 
+    private Uri mDownloadedPackageFileUri;
+
     /**
      * Remember if we checked download since our own process restarted.
      */
@@ -384,8 +382,6 @@ public class Distribute extends AbstractAppCenterService {
     /**
      * Get the current update track (public vs private).
      */
-    // TODO Remove suppress when app uses it without reflection on jCenter
-    @SuppressWarnings("WeakerAccess")
     public static int getUpdateTrack() {
         return getInstance().getInstanceUpdateTrack();
     }
@@ -523,7 +519,7 @@ public class Distribute extends AbstractAppCenterService {
      * @return true if workflow was reset, false otherwise.
      */
     private boolean tryResetWorkflow() {
-        if (getStoredDownloadState() == DOWNLOAD_STATE_COMPLETED && mCheckReleaseCallId == null) {
+        if (DistributeUtils.getStoredDownloadState() == DOWNLOAD_STATE_COMPLETED && mCheckReleaseCallId == null) {
             mWorkflowCompleted = false;
             mBrowserOpenedOrAborted = false;
             return true;
@@ -671,7 +667,7 @@ public class Distribute extends AbstractAppCenterService {
                     return;
                 }
                 boolean isDownloading = mReleaseDownloader != null && mReleaseDownloader.isDownloading();
-                if (getStoredDownloadState() != DOWNLOAD_STATE_AVAILABLE || isDownloading) {
+                if (DistributeUtils.getStoredDownloadState() != DOWNLOAD_STATE_AVAILABLE || isDownloading) {
                     AppCenterLog.error(LOG_TAG, "Cannot handle user update action at this time.");
                     return;
                 }
@@ -878,7 +874,7 @@ public class Distribute extends AbstractAppCenterService {
             }
 
             /* Load cached release details if process restarted and we have such a cache. */
-            int downloadState = getStoredDownloadState();
+            int downloadState = DistributeUtils.getStoredDownloadState();
             if (mReleaseDetails == null && downloadState != DOWNLOAD_STATE_COMPLETED) {
                 updateReleaseDetails(DistributeUtils.loadCachedReleaseDetails());
 
@@ -1063,10 +1059,9 @@ public class Distribute extends AbstractAppCenterService {
      * Cancel notification if needed.
      */
     private synchronized void cancelNotification() {
-        if (getStoredDownloadState() == DOWNLOAD_STATE_NOTIFIED) {
-            AppCenterLog.debug(LOG_TAG, "Delete notification");
-            NotificationManager notificationManager = (NotificationManager) mContext.getSystemService(Context.NOTIFICATION_SERVICE);
-            notificationManager.cancel(DistributeUtils.getNotificationId());
+        if (DistributeUtils.getStoredDownloadState() == DOWNLOAD_STATE_NOTIFIED) {
+            AppCenterLog.debug(LOG_TAG, "Cancel donwload notification");
+            DistributeUtils.cancelDownloadNotification(mContext);
         }
     }
 
@@ -1174,7 +1169,7 @@ public class Distribute extends AbstractAppCenterService {
     @VisibleForTesting
     synchronized void getLatestReleaseDetails(final String distributionGroupId, String updateToken) {
         AppCenterLog.debug(LOG_TAG, "Get latest release details...");
-        String releaseHash = computeReleaseHash(mPackageInfo);
+        String releaseHash = DistributeUtils.computeReleaseHash(mPackageInfo);
         String url = mApiUrl;
         if (updateToken == null) {
             url += String.format(GET_LATEST_PUBLIC_RELEASE_PATH_FORMAT, mAppSecret, releaseHash, getReportingParametersForUpdatedRelease(true, distributionGroupId));
@@ -1434,7 +1429,7 @@ public class Distribute extends AbstractAppCenterService {
         if (mPackageInfo == null || TextUtils.isEmpty(lastDownloadedReleaseHash)) {
             return false;
         }
-        String currentInstalledReleaseHash = computeReleaseHash(mPackageInfo);
+        String currentInstalledReleaseHash = DistributeUtils.computeReleaseHash(mPackageInfo);
         return currentInstalledReleaseHash.equals(lastDownloadedReleaseHash);
     }
 
@@ -1933,6 +1928,8 @@ public class Distribute extends AbstractAppCenterService {
      */
     @UiThread
     private synchronized void installUpdate() {
+
+        // TODO: check mDownloadedPackageFileUri
         if (mReleaseInstallerListener == null) {
             AppCenterLog.debug(LOG_TAG, "Installing couldn't start due to the release installer wasn't initialized.");
             return;
@@ -1942,9 +1939,7 @@ public class Distribute extends AbstractAppCenterService {
             @Override
             public void run() {
                 AppCenterLog.debug(AppCenterLog.LOG_TAG, "Start installing new release...");
-
-                // TODO: Get localUri
-                InstallerUtils.installPackage(null, mContext, mReleaseInstallerListener);
+                InstallerUtils.installPackage(mDownloadedPackageFileUri, mContext, mReleaseInstallerListener);
             }
         });
     }
@@ -1958,7 +1953,7 @@ public class Distribute extends AbstractAppCenterService {
             AppCenterLog.debug(LOG_TAG, "Installing couldn't start due to the release installer wasn't initialized.");
             return;
         }
-        // TODO: Remember localUri
+        mDownloadedPackageFileUri = localUri;
 
         /* Check permission on start application after update. */
         if (InstallerUtils.isSystemAlertWindowsEnabled(mContext)) {
@@ -1974,10 +1969,11 @@ public class Distribute extends AbstractAppCenterService {
      * when download completes, it will not notify and return that the install U.I. should be shown now.
      *
      * @param releaseDetails release details to check state.
+     * @param intent         notification click intent.
      * @return false if install U.I should be shown now, true if a notification was posted or if the task was canceled.
      */
     @UiThread
-    synchronized boolean notifyDownload(ReleaseDetails releaseDetails) {
+    synchronized boolean notifyDownload(ReleaseDetails releaseDetails, Intent intent) {
 
         /* Check state. */
         if (releaseDetails != mReleaseDetails) {
@@ -1991,52 +1987,18 @@ public class Distribute extends AbstractAppCenterService {
          * We should not hold the install any longer now, even if the async task was long enough
          * for app to be in background again, we should show install U.I. now.
          */
-        if (mForegroundActivity != null || getStoredDownloadState() == DOWNLOAD_STATE_NOTIFIED) {
+        if (mForegroundActivity != null || DistributeUtils.getStoredDownloadState() == DOWNLOAD_STATE_NOTIFIED) {
             return false;
         }
 
         /* Post notification. */
         AppCenterLog.debug(LOG_TAG, "Post a notification as the download finished in background.");
-        NotificationManager notificationManager = (NotificationManager) mContext.getSystemService(Context.NOTIFICATION_SERVICE);
-        Notification.Builder builder;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-
-            /* Create or update notification channel (mandatory on Android 8 target). */
-            NotificationChannel channel = new NotificationChannel(NOTIFICATION_CHANNEL_ID,
-                    mContext.getString(R.string.appcenter_distribute_notification_category),
-                    NotificationManager.IMPORTANCE_DEFAULT);
-            notificationManager.createNotificationChannel(channel);
-            builder = new Notification.Builder(mContext, NOTIFICATION_CHANNEL_ID);
-        } else {
-            builder = getOldNotificationBuilder();
-        }
-
-        // TODO: Combine this and code from resumeApp.
-        Intent intent = new Intent(mContext, DeepLinkActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        PendingIntent pendingIntent = PendingIntent.getActivity(
-                mContext, 0, intent, 0);
-
-        builder.setTicker(mContext.getString(R.string.appcenter_distribute_install_ready_title))
-                .setContentTitle(mContext.getString(R.string.appcenter_distribute_install_ready_title))
-                .setContentText(getInstallReadyMessage())
-                .setSmallIcon(mContext.getApplicationInfo().icon)
-                .setStyle(new Notification.BigTextStyle().bigText(getInstallReadyMessage()))
-                .setContentIntent(pendingIntent);
-        Notification notification = builder.build();
-        notification.flags |= Notification.FLAG_AUTO_CANCEL;
-        notificationManager.notify(DistributeUtils.getNotificationId(), notification);
+        DistributeUtils.postDownloadNotification(mContext, getInstallReadyMessage(), intent);
         SharedPreferencesManager.putInt(PREFERENCE_KEY_DOWNLOAD_STATE, DOWNLOAD_STATE_NOTIFIED);
 
         /* Reset check download flag to show install U.I. on resume if notification ignored. */
         mCheckedDownload = false;
         return true;
-    }
-
-    @NonNull
-    @SuppressWarnings({"deprecation", "RedundantSuppression"})
-    private Notification.Builder getOldNotificationBuilder() {
-        return new Notification.Builder(mContext);
     }
 
     /**
