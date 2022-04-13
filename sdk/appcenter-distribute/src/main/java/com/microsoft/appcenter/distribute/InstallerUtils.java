@@ -33,7 +33,7 @@ import java.util.Set;
 /**
  * Installer utils.
  */
-public class InstallerUtils {
+class InstallerUtils {
 
     /**
      * Value when {@link Settings.Secure#INSTALL_NON_MARKET_APPS} setting is enabled.

@@ -15,6 +15,7 @@ import android.widget.Toast;
 
 import androidx.annotation.AnyThread;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.WorkerThread;
 
 import com.microsoft.appcenter.distribute.R;
@@ -34,9 +35,10 @@ import static com.microsoft.appcenter.distribute.DistributeConstants.UPDATE_PROG
 
 public class DownloadManagerReleaseDownloader extends AbstractReleaseDownloader {
 
-    public DownloadManagerReleaseDownloader(@NonNull Context context, @NonNull ReleaseDetails releaseDetails, @NonNull Listener listener) {
-        super(context, releaseDetails, listener);
-    }
+    /**
+     * Timeout to start download the package, in millis.
+     */
+    private final static int PENDING_TIMEOUT = 10 * 1000;
 
     private long mDownloadId = INVALID_DOWNLOAD_IDENTIFIER;
 
@@ -49,6 +51,10 @@ public class DownloadManagerReleaseDownloader extends AbstractReleaseDownloader 
      * Current task inspecting the latest release details that we fetched from server.
      */
     private DownloadManagerRequestTask mRequestTask;
+
+    public DownloadManagerReleaseDownloader(@NonNull Context context, @NonNull ReleaseDetails releaseDetails, @NonNull Listener listener) {
+        super(context, releaseDetails, listener);
+    }
 
     DownloadManager getDownloadManager() {
         return (DownloadManager) mContext.getSystemService(DOWNLOAD_SERVICE);
@@ -110,6 +116,16 @@ public class DownloadManagerReleaseDownloader extends AbstractReleaseDownloader 
     }
 
     /**
+     * Clears download id if it's active.
+     */
+    synchronized void clearDownloadId(long downloadId) {
+        if (downloadId == getDownloadId()) {
+            remove(downloadId);
+            setDownloadId(INVALID_DOWNLOAD_IDENTIFIER);
+        }
+    }
+
+    /**
      * Start new download.
      */
     private synchronized void request() {
@@ -138,13 +154,20 @@ public class DownloadManagerReleaseDownloader extends AbstractReleaseDownloader 
         AsyncTaskUtils.execute(LOG_TAG, new DownloadManagerRemoveTask(mContext, downloadId));
     }
 
+    private void cancelPendingDownload(long downloadId) {
+        if (isCancelled()) {
+            return;
+        }
+        AsyncTaskUtils.execute(LOG_TAG, new DownloadManagerCancelPendingTask(this, downloadId));
+    }
+
     @WorkerThread
     synchronized void onStart() {
         request();
     }
 
     @WorkerThread
-    synchronized void onDownloadStarted(long downloadId, long enqueueTime) {
+    synchronized void onDownloadStarted(final long downloadId, long enqueueTime) {
         if (isCancelled()) {
             return;
         }
@@ -157,6 +180,15 @@ public class DownloadManagerReleaseDownloader extends AbstractReleaseDownloader 
         if (mReleaseDetails.isMandatoryUpdate()) {
             update();
         }
+
+        /* Handle pending timeout. */
+        HandlerUtils.getMainHandler().postDelayed(new Runnable() {
+
+            @Override
+            public void run() {
+                cancelPendingDownload(downloadId);
+            }
+        }, PENDING_TIMEOUT);
     }
 
     @WorkerThread
