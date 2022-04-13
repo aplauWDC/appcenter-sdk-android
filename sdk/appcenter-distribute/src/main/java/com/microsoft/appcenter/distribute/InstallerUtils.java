@@ -165,11 +165,9 @@ class InstallerUtils {
             /* Prepare session. */
             int sessionId = packageInstaller.createSession(params);
             session = packageInstaller.openSession(sessionId);
-
-            // FIXME: android.os.strictmode.LeakedClosableViolation: A resource was acquired at attached stack trace but never released.
-            ParcelFileDescriptor fileDescriptor = context.getContentResolver().openFileDescriptor(localUri, "r");
-            addFileToInstallSession(fileDescriptor, session);
-            fileDescriptor.close(); // TODO: finally
+            try (ParcelFileDescriptor fileDescriptor = context.getContentResolver().openFileDescriptor(localUri, "r")) {
+                addFileToInstallSession(fileDescriptor, session);
+            }
 
             /* Start to install a new release. */
             session.commit(createIntentSender(context, sessionId));

@@ -1884,13 +1884,7 @@ public class Distribute extends AbstractAppCenterService {
 
         /* Nothing to do if already in foreground. */
         if (mForegroundActivity == null) {
-
-            /*
-             * Use our deep link activity with no parameter just to resume app correctly
-             * without duplicating activities or clearing task.
-             */
-            Intent intent = new Intent(context, DeepLinkActivity.class);
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            Intent intent = DistributeUtils.getResumeAppIntent(context);
             context.startActivity(intent);
         }
     }
@@ -1928,10 +1922,12 @@ public class Distribute extends AbstractAppCenterService {
      */
     @UiThread
     private synchronized void installUpdate() {
-
-        // TODO: check mDownloadedPackageFileUri
         if (mReleaseInstallerListener == null) {
             AppCenterLog.debug(LOG_TAG, "Installing couldn't start due to the release installer wasn't initialized.");
+            return;
+        }
+        if (mDownloadedPackageFileUri == null) {
+            AppCenterLog.debug(LOG_TAG, "Installing couldn't start because the package file is missing.");
             return;
         }
         post(new Runnable() {
